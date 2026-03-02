@@ -1,0 +1,84 @@
+# Kotlin
+*.kt.swp
+*.kotlin_metadata
+.kotlin
+.qoder
+.idea
+
+# Gradle
+cache/
+.gradle/
+build/
+!src/**/build/
+!composeApp/src/**/build/
+
+# Android
+*.iml
+.local.properties
+.externalNativeBuild
+.cxx/
+*.keystore
+*.jks
+local.properties
+captures/
+
+# IntelliJ IDEA
+tmp/
+.idea/
+*.iws
+.idea/**
+!.idea/codeStyles/Project.xml
+!.idea/runConfigurations/
+
+# macOS
+.DS_Store
+
+# iOS
+xcuserdata/
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcodeproj/project.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+**/xcshareddata/WorkspaceSettings.xcsettings
+
+# Node
+node_modules/
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Secrets
+**/local.properties
+**/secrets.properties
+**/keystore.jks
+**/debug.keystore
+**/google-services.json
+**/GoogleService-Info.plist
+
+# Build outputs
+**/[Dd]ist/
+**/build/
+**/.gradle/
+**/.idea/workspace.xml
+**/.idea/tasks.xml
+**/.idea/assetWizardSettings.xml
+**/.idea/dictionaries
+**/.idea/shelf
+**/log
+**/logs
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# Ktor client
+**/ktor-config.json
+
+# Compose Multiplatform
+**/compose-generated/
+*.kjs
+*.kjs.map
+
