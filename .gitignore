@@ -57,6 +57,11 @@ Desktop.ini
 **/google-services.json
 **/GoogleService-Info.plist
 
+# Keystore folder
+keystore/
+*.jks
+*.keystore
+
 # Build outputs
 **/[Dd]ist/
 **/build/

@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		1B5D65F9A498F82CD2DA1618 /* KotlinProject.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KotlinProject.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1B5D65F9A498F82CD2DA1618 /* acepanel app.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "acepanel app.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -59,7 +59,7 @@
 		C7B229EF88F1694E149A5723 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				1B5D65F9A498F82CD2DA1618 /* KotlinProject.app */,
+				1B5D65F9A498F82CD2DA1618 /* acepanel app.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -87,7 +87,7 @@
 			packageProductDependencies = (
 			);
 			productName = iosApp;
-			productReference = 1B5D65F9A498F82CD2DA1618 /* KotlinProject.app */;
+			productReference = 1B5D65F9A498F82CD2DA1618 /* acepanel app.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
