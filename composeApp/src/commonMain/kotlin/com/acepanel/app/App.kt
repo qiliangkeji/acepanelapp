@@ -2,7 +2,11 @@ package com.acepanel.app
 
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Box
 import com.acepanel.app.ui.components.GlobalFeedbackHost
+import com.acepanel.app.ui.components.FloatingTerminalHost
+import com.acepanel.app.ui.components.FloatingTerminalSession
 import com.acepanel.app.ui.screens.*
 
 sealed class Screen {
@@ -16,7 +20,7 @@ sealed class Screen {
     data class DatabaseList(val panelId: String) : Screen()
     data class DatabaseDetail(val panelId: String, val serverId: Long, val databaseName: String) : Screen()
     data class AddDatabase(val panelId: String) : Screen()
-    data class Terminal(val panelId: String, val sshId: Long = 0) : Screen()
+    data class Terminal(val panelId: String, val sshId: Long = 0, val initialPath: String = "/") : Screen()
     data class Firewall(val panelId: String) : Screen()
     data class SSLCert(val panelId: String) : Screen()
     data class FileManager(
@@ -30,7 +34,12 @@ sealed class Screen {
     data class SystemMonitor(val panelId: String) : Screen()
     data class LogView(val panelId: String) : Screen()
     data class BackupManagement(val panelId: String) : Screen()
-    data class ConfigEditor(val panelId: String, val fileName: String = "配置编辑器", val filePath: String = "") : Screen()
+    data class ConfigEditor(
+        val panelId: String,
+        val fileName: String = "配置编辑器",
+        val filePath: String = "",
+        val serviceName: String = ""
+    ) : Screen()
     data class DeleteWebsiteConfirm(val panelId: String, val websiteId: String) : Screen()
     data class Login(
         val panelId: String,
@@ -62,7 +71,7 @@ private fun screenStateKey(screen: Screen): String {
         is Screen.DatabaseList -> "database-list:${screen.panelId}"
         is Screen.DatabaseDetail -> "database-detail:${screen.panelId}:${screen.serverId}:${screen.databaseName}"
         is Screen.AddDatabase -> "add-database:${screen.panelId}"
-        is Screen.Terminal -> "terminal:${screen.panelId}:${screen.sshId}"
+        is Screen.Terminal -> "terminal:${screen.panelId}:${screen.sshId}:${screen.initialPath}"
         is Screen.Firewall -> "firewall:${screen.panelId}"
         is Screen.SSLCert -> "ssl-cert:${screen.panelId}"
         is Screen.FileManager -> "file-manager:${screen.panelId}:${screen.path}"
@@ -71,7 +80,7 @@ private fun screenStateKey(screen: Screen): String {
         is Screen.SystemMonitor -> "system-monitor:${screen.panelId}"
         is Screen.LogView -> "log-view:${screen.panelId}"
         is Screen.BackupManagement -> "backup-management:${screen.panelId}"
-        is Screen.ConfigEditor -> "config-editor:${screen.panelId}:${screen.filePath}:${screen.fileName}"
+        is Screen.ConfigEditor -> "config-editor:${screen.panelId}:${screen.filePath}:${screen.serviceName}:${screen.fileName}"
         is Screen.DeleteWebsiteConfirm -> "delete-website:${screen.panelId}:${screen.websiteId}"
         is Screen.Login -> "login:${screen.panelId}"
         is Screen.TaskCenter -> "task-center:${screen.panelId}"
@@ -84,6 +93,7 @@ private fun screenStateKey(screen: Screen): String {
 @Composable
 fun App() {
     var navigationStack by remember { mutableStateOf(listOf<Screen>(Screen.Home)) }
+    var floatingTerminal by remember { mutableStateOf<FloatingTerminalSession?>(null) }
     val saveableStateHolder = rememberSaveableStateHolder()
 
     val currentScreen = navigationStack.last()
@@ -175,6 +185,8 @@ fun App() {
     }
 
     GlobalFeedbackHost {
+        Box {
+        Box {
         saveableStateHolder.SaveableStateProvider(screenStateKey(currentScreen)) {
         when (val screen = currentScreen) {
             is Screen.Home -> {
@@ -265,6 +277,12 @@ fun App() {
                             "rewrite" -> navigateTo(Screen.ConfigEditor(screen.panelId, "010-rewrite.conf", rewriteFile))
                             "ssl" -> navigateTo(Screen.SSLCert(screen.panelId))
                             "directory" -> navigateTo(Screen.FileManager(screen.panelId, sitePath))
+                            "access_log" -> website?.access_log?.takeIf { it.isNotBlank() }?.let {
+                                navigateTo(Screen.ConfigEditor(screen.panelId, it.substringAfterLast('/').ifEmpty { "access.log" }, it))
+                            }
+                            "error_log" -> website?.error_log?.takeIf { it.isNotBlank() }?.let {
+                                navigateTo(Screen.ConfigEditor(screen.panelId, it.substringAfterLast('/').ifEmpty { "error.log" }, it))
+                            }
                             "delete" -> navigateTo(Screen.DeleteWebsiteConfirm(screen.panelId, screen.websiteId.toString()))
                             else -> {}
                         }
@@ -316,7 +334,16 @@ fun App() {
                 TerminalScreen(
                     panelId = screen.panelId,
                     sshId = screen.sshId,
-                    onBackClick = navigateBack
+                    initialPath = screen.initialPath,
+                    onBackClick = navigateBack,
+                    onFloat = {
+                        floatingTerminal = FloatingTerminalSession(
+                            panelId = screen.panelId,
+                            sshId = screen.sshId,
+                            initialPath = screen.initialPath
+                        )
+                        navigateBack()
+                    }
                 )
             }
             is Screen.Firewall -> {
@@ -355,6 +382,17 @@ fun App() {
                                 pathHistory = currentWithPosition.pathHistory + currentWithPosition.path
                             )
                         )
+                    },
+                    onOpenTerminal = { path, firstVisibleItemIndex, firstVisibleItemScrollOffset ->
+                        replaceCurrent(
+                            withFileScrollPosition(
+                                screen,
+                                firstVisibleItemIndex,
+                                firstVisibleItemScrollOffset,
+                                anchorPath = path
+                            )
+                        )
+                        navigateTo(Screen.Terminal(screen.panelId, initialPath = path))
                     },
                     onOpenFile = { filePath, firstVisibleItemIndex, firstVisibleItemScrollOffset ->
                         replaceCurrent(
@@ -412,6 +450,7 @@ fun App() {
                     panelId = screen.panelId,
                     filePath = screen.filePath,
                     fileName = screen.fileName,
+                    serviceName = screen.serviceName,
                     onBack = navigateBack,
                     onSaveClick = navigateBack
                 )
@@ -435,7 +474,10 @@ fun App() {
             is Screen.ProjectList -> {
                 ProjectListScreen(
                     panelId = screen.panelId,
-                    onBack = navigateBack
+                    onBack = navigateBack,
+                    onOpenLog = { fileName, filePath, serviceName ->
+                        navigateTo(Screen.ConfigEditor(screen.panelId, fileName, filePath, serviceName))
+                    }
                 )
             }
             is Screen.WebHookManagement -> {
@@ -448,9 +490,27 @@ fun App() {
                 SshHostScreen(
                     panelId = screen.panelId,
                     onBack = navigateBack,
-                    onConnect = { sshId -> navigateTo(Screen.Terminal(screen.panelId, sshId)) }
+                    onConnect = { sshId ->
+                        navigateTo(Screen.Terminal(screen.panelId, sshId))
+                    }
                 )
             }
+        }
+        }
+        }
+        Box(modifier = androidx.compose.ui.Modifier.align(Alignment.BottomEnd)) {
+            FloatingTerminalHost(
+                session = floatingTerminal,
+                onMinimize = {
+                    floatingTerminal = floatingTerminal?.copy(minimized = true)
+                },
+                onRestore = {
+                    floatingTerminal = floatingTerminal?.copy(minimized = false)
+                },
+                onClose = {
+                    floatingTerminal = null
+                }
+            )
         }
         }
     }

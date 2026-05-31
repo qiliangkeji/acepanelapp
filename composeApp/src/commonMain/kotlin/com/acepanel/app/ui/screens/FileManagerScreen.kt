@@ -26,7 +26,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.acepanel.app.data.FileListItem
+import com.acepanel.app.feedback.FeedbackCenter
+import com.acepanel.app.platform.rememberClipboardController
+import com.acepanel.app.platform.rememberFileTransferController
 import com.acepanel.app.ui.components.AnimatedAppDialog
+import com.acepanel.app.ui.components.RemotePathMode
+import com.acepanel.app.ui.components.RemotePathSelector
 import com.acepanel.app.ui.components.StatusBarSpacer
 import com.acepanel.app.viewmodel.FileClipboardMode
 import com.acepanel.app.viewmodel.FileManagerViewModel
@@ -41,9 +46,12 @@ fun FileManagerScreen(
     onBackClick: (Int, Int) -> Unit = { _, _ -> },
     onAddClick: () -> Unit = {},
     onOpenFile: ((String, Int, Int) -> Unit)? = null,
-    onOpenDirectory: (String, Int, Int) -> Unit = { _, _, _ -> }
+    onOpenDirectory: (String, Int, Int) -> Unit = { _, _, _ -> },
+    onOpenTerminal: (String, Int, Int) -> Unit = { _, _, _ -> }
 ) {
     val vm: FileManagerViewModel = viewModel()
+    val clipboardController = rememberClipboardController()
+    val fileTransfer = rememberFileTransferController()
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = initialFirstVisibleItemIndex,
         initialFirstVisibleItemScrollOffset = initialFirstVisibleItemScrollOffset
@@ -169,6 +177,22 @@ fun FileManagerScreen(
                             .size(36.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .border(1.5.dp, Color(0xFFE4E4E7), RoundedCornerShape(10.dp))
+                            .clickable {
+                                fileTransfer.pickFile { picked ->
+                                    if (picked != null) {
+                                        vm.uploadLocalFile(picked.name, picked.bytes)
+                                    }
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = "↑", fontSize = 18.sp, color = Color(0xFF18181B))
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .border(1.5.dp, Color(0xFFE4E4E7), RoundedCornerShape(10.dp))
                             .clickable { showRemoteDownloadDialog = true },
                         contentAlignment = Alignment.Center
                     ) {
@@ -240,6 +264,7 @@ fun FileManagerScreen(
             ) {
                 items(files, key = { it.full }) { file ->
                     FileItemRow(
+                        panelId = panelId,
                         file = file,
                         onClick = {
                             if (file.dir) {
@@ -262,7 +287,31 @@ fun FileManagerScreen(
                         onMove = { vm.markForMove(file) },
                         onPermission = { mode, owner, group -> vm.updatePermission(file, mode, owner, group) },
                         onCompress = { archiveName -> vm.compress(file, archiveName) },
-                        onUnCompress = { targetPath -> vm.unCompress(file, targetPath) }
+                        onUnCompress = { targetPath -> vm.unCompress(file, targetPath) },
+                        onCopyPath = {
+                            clipboardController.setText(file.full)
+                            FeedbackCenter.success("路径已复制", file.full)
+                        },
+                        onDownload = {
+                            vm.downloadFile(file) { bytes, message ->
+                                if (bytes != null) {
+                                    fileTransfer.saveFile(file.name, bytes) { saved, saveError ->
+                                        if (!saved) {
+                                            vm.setActionError(saveError ?: "保存失败")
+                                        }
+                                    }
+                                } else if (!message.isNullOrBlank()) {
+                                    vm.setActionError(message)
+                                }
+                            }
+                        },
+                        onTerminal = {
+                            onOpenTerminal(
+                                file.full,
+                                listState.firstVisibleItemIndex,
+                                listState.firstVisibleItemScrollOffset
+                            )
+                        }
                     )
                     HorizontalDivider(thickness = 0.5.dp, color = Color(0xFFF0F0F0))
                 }
@@ -273,6 +322,7 @@ fun FileManagerScreen(
 
 @Composable
 private fun FileItemRow(
+    panelId: String,
     file: FileListItem,
     onClick: () -> Unit,
     onDelete: () -> Unit,
@@ -281,7 +331,10 @@ private fun FileItemRow(
     onMove: () -> Unit,
     onPermission: (String, String, String) -> Unit,
     onCompress: (String) -> Unit,
-    onUnCompress: (String) -> Unit
+    onUnCompress: (String) -> Unit,
+    onCopyPath: () -> Unit,
+    onDownload: () -> Unit,
+    onTerminal: () -> Unit
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showActions by remember { mutableStateOf(false) }
@@ -359,10 +412,12 @@ private fun FileItemRow(
     }
 
     if (showUnCompressDialog) {
-        SingleTextInputDialog(
+        PathInputDialog(
             title = "解压",
             label = "解压到",
+            panelId = panelId,
             initial = file.full.substringBeforeLast('/', missingDelimiterValue = "/").ifEmpty { "/" },
+            mode = RemotePathMode.Directory,
             onDismiss = { showUnCompressDialog = false },
             onConfirm = {
                 onUnCompress(it)
@@ -453,10 +508,26 @@ private fun FileItemRow(
                         text = { Text("压缩") },
                         onClick = { showActions = false; showCompressDialog = true }
                     )
+                    DropdownMenuItem(
+                        text = { Text("复制路径") },
+                        onClick = { showActions = false; onCopyPath() }
+                    )
+                    if (!file.dir) {
+                        DropdownMenuItem(
+                            text = { Text("下载") },
+                            onClick = { showActions = false; onDownload() }
+                        )
+                    }
                     if (file.isCompressArchive()) {
                         DropdownMenuItem(
                             text = { Text("解压") },
                             onClick = { showActions = false; showUnCompressDialog = true }
+                        )
+                    }
+                    if (file.dir) {
+                        DropdownMenuItem(
+                            text = { Text("终端") },
+                            onClick = { showActions = false; onTerminal() }
                         )
                     }
                 }
@@ -581,6 +652,53 @@ private fun SingleTextInputDialog(
                 label = { Text(label) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
+            )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text("取消", color = Color(0xFF71717A)) }
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (value.isNotBlank()) Color(0xFF2563EB) else Color(0xFF71717A))
+                        .clickable(enabled = value.isNotBlank()) { onConfirm(value.trim()) }
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text("确定", fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PathInputDialog(
+    title: String,
+    label: String,
+    panelId: String,
+    initial: String = "",
+    mode: RemotePathMode = RemotePathMode.Any,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var value by remember(initial) { mutableStateOf(initial) }
+
+    AnimatedAppDialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.White)
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF18181B))
+            RemotePathSelector(
+                panelId = panelId,
+                value = value,
+                onValueChange = { value = it },
+                label = label,
+                mode = mode,
+                allowClear = false
             )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss) { Text("取消", color = Color(0xFF71717A)) }

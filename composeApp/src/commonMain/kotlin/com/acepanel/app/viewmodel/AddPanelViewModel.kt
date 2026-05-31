@@ -21,6 +21,7 @@ class AddPanelViewModel : ViewModel() {
     val authMode = MutableStateFlow("session")  // token 或 session
     val quickPaste = MutableStateFlow("")
     val sessionUsername = MutableStateFlow("")
+    val sessionPassword = MutableStateFlow("")
     val userAgent = MutableStateFlow("")
     val tokenId = MutableStateFlow("")
     val tokenSecret = MutableStateFlow("")
@@ -65,6 +66,7 @@ class AddPanelViewModel : ViewModel() {
         entrance.value = config.entrance
         authMode.value = config.authMode
         sessionUsername.value = config.sessionUsername
+        sessionPassword.value = config.sessionPassword
         userAgent.value = config.userAgent
         tokenId.value = if (config.tokenId > 0) config.tokenId.toString() else ""
         tokenSecret.value = config.tokenSecret
@@ -123,7 +125,7 @@ class AddPanelViewModel : ViewModel() {
      * Token 模式 -> 调 onTokenSaved 直接返回
      * Session 模式 -> 调 onSessionSaved(panelId) 跳转到登录页
      */
-    fun savePanel(onTokenSaved: () -> Unit, onSessionSaved: (panelId: String, username: String) -> Unit) {
+    fun savePanel(onTokenSaved: () -> Unit, onSessionSaved: (panelId: String, username: String, password: String) -> Unit) {
         val config = buildConfig() ?: run {
             val message = validateError()
             _testStatus.value = TestStatus.Error(message)
@@ -134,7 +136,7 @@ class AddPanelViewModel : ViewModel() {
         _saveResult.value = SaveResult.Success
         FeedbackCenter.success(if (isEditing()) "面板已更新" else "面板已保存", config.name)
         if (config.authMode == "session") {
-            onSessionSaved(config.id, config.sessionUsername)
+            onSessionSaved(config.id, config.sessionUsername, config.sessionPassword)
         } else {
             onTokenSaved()
         }
@@ -162,7 +164,10 @@ class AddPanelViewModel : ViewModel() {
         if (importKey == lastAutoImportKey) return
         lastAutoImportKey = importKey
 
-        val config = buildConfig(sessionUsernameOverride = parsed.username) ?: run {
+        val config = buildConfig(
+            sessionUsernameOverride = parsed.username,
+            sessionPasswordOverride = parsed.password
+        ) ?: run {
             _testStatus.value = TestStatus.Error(validateError())
             return
         }
@@ -187,7 +192,10 @@ class AddPanelViewModel : ViewModel() {
         return "请检查填写的信息是否完整"
     }
 
-    private fun buildConfig(sessionUsernameOverride: String = sessionUsername.value): PanelConfig? {
+    private fun buildConfig(
+        sessionUsernameOverride: String = sessionUsername.value,
+        sessionPasswordOverride: String = sessionPassword.value
+    ): PanelConfig? {
         val h = host.value.trim()
         val p = port.value.trim().toIntOrNull() ?: return null
         val n = name.value.trim().ifEmpty { return null }
@@ -210,6 +218,8 @@ class AddPanelViewModel : ViewModel() {
                 remark = remark.value.trim()
             )
         } else {
+            val existingPassword = editingPanelId?.let { PanelRepository.getPanel(it)?.sessionPassword }.orEmpty()
+            val savedPassword = sessionPasswordOverride.ifBlank { existingPassword }
             return PanelConfig(
                 id = editingPanelId ?: generateId(),
                 name = n,
@@ -219,6 +229,7 @@ class AddPanelViewModel : ViewModel() {
                 entrance = entrance.value.trim(),
                 authMode = "session",
                 sessionUsername = sessionUsernameOverride.trim(),
+                sessionPassword = savedPassword,
                 userAgent = userAgent.value.trim(),
                 remark = remark.value.trim()
             )
@@ -234,6 +245,7 @@ class AddPanelViewModel : ViewModel() {
         authMode.value = "session"
         quickPaste.value = ""
         sessionUsername.value = ""
+        sessionPassword.value = ""
         userAgent.value = ""
         tokenId.value = ""
         tokenSecret.value = ""
@@ -256,6 +268,7 @@ class AddPanelViewModel : ViewModel() {
         if (parsed.port.isNotBlank()) port.value = parsed.port
         if (parsed.entrance.isNotBlank()) entrance.value = parsed.entrance
         if (parsed.username.isNotBlank()) sessionUsername.value = parsed.username
+        if (parsed.password.isNotBlank()) sessionPassword.value = parsed.password
         if (parsed.userAgent.isNotBlank()) userAgent.value = parsed.userAgent
         if (parsed.host.isNotBlank() && name.value.isBlank()) {
             name.value = parsed.host

@@ -25,13 +25,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.acepanel.app.data.ProjectListItem
 import com.acepanel.app.data.UpdateProjectRequest
 import com.acepanel.app.ui.components.AnimatedAppDialog
+import com.acepanel.app.ui.components.RemotePathMode
+import com.acepanel.app.ui.components.RemotePathSelector
 import com.acepanel.app.ui.components.StatusBarSpacer
 import com.acepanel.app.viewmodel.ProjectListViewModel
 
 @Composable
 fun ProjectListScreen(
     panelId: String = "",
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenLog: (String, String, String) -> Unit = { _, _, _ -> }
 ) {
     val vm = viewModel<ProjectListViewModel>()
     val projects by vm.projects.collectAsStateWithLifecycle()
@@ -51,6 +54,7 @@ fun ProjectListScreen(
 
     if (showCreateDialog) {
         CreateProjectDialog(
+            panelId = panelId,
             actionError = actionError,
             onDismiss = { vm.hideCreate() },
             onCreate = { name, type, desc, rootDir, execStart, user ->
@@ -61,6 +65,7 @@ fun ProjectListScreen(
 
     editingProject?.let { project ->
         EditProjectDialog(
+            panelId = panelId,
             project = project,
             isLoading = isProjectLoading,
             isSaving = isUpdating,
@@ -214,7 +219,8 @@ fun ProjectListScreen(
                         onStop = { vm.stop(project.name) },
                         onRestart = { vm.restart(project.name) },
                         onToggleEnable = { vm.toggleEnable(project) },
-                        onDelete = { vm.delete(project.id) }
+                        onDelete = { vm.delete(project.id) },
+                        onOpenLog = onOpenLog
                     )
                 }
             }
@@ -231,7 +237,8 @@ private fun ProjectCard(
     onStop: () -> Unit,
     onRestart: () -> Unit,
     onToggleEnable: () -> Unit,
-    onDelete: () -> Unit = {}
+    onDelete: () -> Unit = {},
+    onOpenLog: (String, String, String) -> Unit = { _, _, _ -> }
 ) {
     val isActive = project.status.startsWith("active")
     val (statusColor, statusBg, statusLabel) = when {
@@ -297,6 +304,27 @@ private fun ProjectCard(
             Text(project.root_dir, fontSize = 12.sp, color = Color(0xFF71717A))
         }
 
+        val stdoutPath = project.standard_output.toLogFilePath()
+        val stderrPath = project.standard_error.toLogFilePath()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ProjActionBtn("服务日志", Color(0xFFF3F4F6), Color(0xFF18181B), Modifier.weight(1f), !isActing, {
+                onOpenLog("${project.name}.service", "", project.name)
+            })
+            if (stdoutPath.isNotBlank()) {
+                ProjActionBtn("输出日志", Color(0xFFF3F4F6), Color(0xFF18181B), Modifier.weight(1f), !isActing, {
+                    onOpenLog("stdout.log", stdoutPath, "")
+                })
+            }
+            if (stderrPath.isNotBlank()) {
+                ProjActionBtn("错误日志", Color(0xFFF3F4F6), Color(0xFF18181B), Modifier.weight(1f), !isActing, {
+                    onOpenLog("stderr.log", stderrPath, "")
+                })
+            }
+        }
+
         // 操作按钮行
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -340,6 +368,16 @@ private fun ProjectCard(
     }
 }
 
+private fun String.toLogFilePath(): String {
+    val value = trim()
+    return when {
+        value.startsWith("append:") -> value.removePrefix("append:")
+        value.startsWith("file:") -> value.removePrefix("file:")
+        value.startsWith("/") -> value
+        else -> ""
+    }
+}
+
 @Composable
 private fun ProjActionBtn(
     text: String,
@@ -365,6 +403,7 @@ private fun ProjActionBtn(
 
 @Composable
 private fun CreateProjectDialog(
+    panelId: String,
     actionError: String?,
     onDismiss: () -> Unit,
     onCreate: (String, String, String, String, String, String) -> Unit
@@ -414,9 +453,14 @@ private fun CreateProjectDialog(
                 }
             }
 
-            OutlinedTextField(value = rootDir, onValueChange = { rootDir = it },
-                label = { Text("项目目录") }, placeholder = { Text("/opt/myapp") },
-                modifier = Modifier.fillMaxWidth(), singleLine = true)
+            RemotePathSelector(
+                panelId = panelId,
+                value = rootDir,
+                onValueChange = { rootDir = it },
+                label = "项目目录",
+                placeholder = "/opt/myapp",
+                mode = RemotePathMode.Directory
+            )
 
             OutlinedTextField(value = execStart, onValueChange = { execStart = it },
                 label = { Text("启动命令") }, placeholder = { Text("/usr/bin/java -jar app.jar") },
@@ -448,6 +492,7 @@ private fun CreateProjectDialog(
 
 @Composable
 private fun EditProjectDialog(
+    panelId: String,
     project: ProjectListItem,
     isLoading: Boolean,
     isSaving: Boolean,
@@ -519,13 +564,23 @@ private fun EditProjectDialog(
                         label = { Text("描述") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
                 }
                 item {
-                    OutlinedTextField(value = rootDir, onValueChange = { rootDir = it },
-                        label = { Text("项目目录") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    RemotePathSelector(
+                        panelId = panelId,
+                        value = rootDir,
+                        onValueChange = { rootDir = it },
+                        label = "项目目录",
+                        mode = RemotePathMode.Directory
+                    )
                 }
                 item {
-                    OutlinedTextField(value = workingDir, onValueChange = { workingDir = it },
-                        label = { Text("工作目录") }, placeholder = { Text("默认使用项目目录") },
-                        modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    RemotePathSelector(
+                        panelId = panelId,
+                        value = workingDir,
+                        onValueChange = { workingDir = it },
+                        label = "工作目录",
+                        placeholder = "默认使用项目目录",
+                        mode = RemotePathMode.Directory
+                    )
                 }
                 item {
                     OutlinedTextField(value = execStart, onValueChange = { execStart = it },

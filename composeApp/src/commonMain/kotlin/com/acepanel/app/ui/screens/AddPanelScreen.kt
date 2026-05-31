@@ -39,6 +39,8 @@ fun AddPanelScreen(
     val entrance by vm.entrance.collectAsStateWithLifecycle()
     val authMode by vm.authMode.collectAsStateWithLifecycle()
     val quickPaste by vm.quickPaste.collectAsStateWithLifecycle()
+    val sessionUsername by vm.sessionUsername.collectAsStateWithLifecycle()
+    val sessionPassword by vm.sessionPassword.collectAsStateWithLifecycle()
     val userAgent by vm.userAgent.collectAsStateWithLifecycle()
     val tokenId by vm.tokenId.collectAsStateWithLifecycle()
     val tokenSecret by vm.tokenSecret.collectAsStateWithLifecycle()
@@ -246,16 +248,31 @@ fun AddPanelScreen(
                 }
             } else {
                 item {
-                    Text(
-                        text = "账号密码登录：保存后会跳转到登录页，使用面板用户名和密码登录。终端功能必须使用此模式。",
-                        fontSize = 13.sp,
-                        color = Color(0xFF71717A),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFFF9FAFB))
-                            .padding(12.dp)
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        InputField(
+                            label = "面板用户名",
+                            value = sessionUsername,
+                            onValueChange = { vm.sessionUsername.value = it },
+                            placeholder = "admin"
+                        )
+                        InputField(
+                            label = "面板密码",
+                            value = sessionPassword,
+                            onValueChange = { vm.sessionPassword.value = it },
+                            placeholder = if (isEditMode) "留空则不保存自动重登密码" else "用于会话过期后自动重新登录",
+                            isPassword = true
+                        )
+                        Text(
+                            text = "账号密码会用于会话过期后自动重登；如果面板开启验证码或 2FA，仍需要手动登录。",
+                            fontSize = 12.sp,
+                            color = Color(0xFF71717A),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFF9FAFB))
+                                .padding(12.dp)
+                        )
+                    }
                 }
             }
 
@@ -323,11 +340,11 @@ fun AddPanelScreen(
                     .clickable {
                     vm.savePanel(
                         onTokenSaved = onSaveClick,
-                        onSessionSaved = { panelId, username ->
+                        onSessionSaved = { panelId, username, password ->
                             if (isEditMode) {
                                 onSaveClick()
                             } else {
-                                onSessionSaved(panelId, username, "", false)
+                                onSessionSaved(panelId, username, password, password.isNotBlank())
                             }
                         }
                     )

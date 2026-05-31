@@ -17,8 +17,9 @@ data class PanelConfig(
     // Token 鉴权
     val tokenId: Long = 0,
     val tokenSecret: String = "",
-    // Session 鉴权（仅用于 WebSocket，保存用户名以便提示）
+    // Session 鉴权（用于自动重登和 WebSocket）
     val sessionUsername: String = "",
+    val sessionPassword: String = "",
     // 自定义 User-Agent，用于面板开启 UA 绑定时匹配允许列表
     val userAgent: String = "",
     // 备注

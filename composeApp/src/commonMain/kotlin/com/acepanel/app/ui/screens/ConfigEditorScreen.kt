@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -32,6 +33,7 @@ fun ConfigEditorScreen(
     panelId: String = "",
     filePath: String = "",
     fileName: String = "配置编辑器",
+    serviceName: String = "",
     onBack: () -> Unit = {},
     onSaveClick: () -> Unit = {},
     showStatusBarSpacer: Boolean = true,
@@ -43,9 +45,24 @@ fun ConfigEditorScreen(
     val isSaving by vm.isSaving.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
     val saveResult by vm.saveResult.collectAsStateWithLifecycle()
+    val editorScrollState = rememberScrollState()
+    val isLogView = serviceName.isNotBlank() || filePath.substringAfterLast('/').endsWith(".log", ignoreCase = true)
+    val editorTextStyle = TextStyle(
+        color = Color(0xFFE4E4E7),
+        fontFamily = FontFamily.Monospace,
+        fontSize = 13.sp,
+        lineHeight = 20.sp
+    )
 
-    LaunchedEffect(panelId, filePath) {
-        if (panelId.isNotEmpty()) vm.init(panelId, filePath)
+    LaunchedEffect(panelId, filePath, serviceName) {
+        if (panelId.isNotEmpty()) vm.init(panelId, filePath, serviceName)
+    }
+
+    LaunchedEffect(content, isLoading, isLogView) {
+        if (!isLoading && isLogView) {
+            withFrameNanos { }
+            editorScrollState.scrollTo(editorScrollState.maxValue)
+        }
     }
 
     Column(
@@ -80,10 +97,10 @@ fun ConfigEditorScreen(
                     .height(32.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .background(
-                        if (filePath.isNotEmpty() && !isSaving) Color(0xFF2563EB)
+                        if (filePath.isNotEmpty() && !isLogView && !isSaving) Color(0xFF2563EB)
                         else Color(0xFF3F3F46)
                     )
-                    .clickable(enabled = filePath.isNotEmpty() && !isSaving) {
+                    .clickable(enabled = filePath.isNotEmpty() && !isLogView && !isSaving) {
                         vm.save(onSaveClick)
                     }
                     .padding(horizontal = 16.dp),
@@ -139,7 +156,7 @@ fun ConfigEditorScreen(
         }
 
         when {
-            filePath.isEmpty() -> {
+            filePath.isEmpty() && serviceName.isEmpty() -> {
                 // 无文件路径时的占位提示
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(
@@ -172,7 +189,7 @@ fun ConfigEditorScreen(
             else -> {
                 // 路径提示
                 Text(
-                    text = filePath,
+                    text = filePath.ifBlank { "systemd: $serviceName" },
                     fontSize = 11.sp,
                     color = Color(0xFF52525B),
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
@@ -183,21 +200,29 @@ fun ConfigEditorScreen(
                         .fillMaxSize()
                         .padding(horizontal = 4.dp, vertical = 4.dp)
                 ) {
-                    BasicTextField(
-                        value = content,
-                        onValueChange = { vm.content.value = it },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp)
-                            .verticalScroll(rememberScrollState()),
-                        textStyle = TextStyle(
-                            color = Color(0xFFE4E4E7),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 13.sp,
-                            lineHeight = 20.sp
-                        ),
-                        cursorBrush = SolidColor(Color(0xFF2563EB))
-                    )
+                    if (isLogView) {
+                        SelectionContainer {
+                            Text(
+                                text = content,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp)
+                                    .verticalScroll(editorScrollState),
+                                style = editorTextStyle
+                            )
+                        }
+                    } else {
+                        BasicTextField(
+                            value = content,
+                            onValueChange = { vm.content.value = it },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp)
+                                .verticalScroll(editorScrollState),
+                            textStyle = editorTextStyle,
+                            cursorBrush = SolidColor(Color(0xFF2563EB))
+                        )
+                    }
                 }
             }
         }

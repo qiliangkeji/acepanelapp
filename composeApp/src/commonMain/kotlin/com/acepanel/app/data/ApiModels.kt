@@ -864,6 +864,13 @@ data class FileContentResponse(
 )
 
 @Serializable
+data class FileTailResponse(
+    val lines: List<String> = emptyList(),
+    val has_more: Boolean = false,
+    val size: Long = 0
+)
+
+@Serializable
 data class FileSaveRequest(
     val path: String,
     val content: String
@@ -1711,7 +1718,9 @@ data class CreateProjectRequest(
     val working_dir: String = "",
     val exec_start: String = "",
     val user: String = "root",
-    val restart: String = "on-failure"
+    val restart: String = "on-failure",
+    val standard_output: String = "",
+    val standard_error: String = ""
 )
 
 @Serializable

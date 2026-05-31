@@ -87,6 +87,8 @@ fun websiteFeatureIcon(key: String): AppIcon = when (key) {
     "rewrite" -> AppIcon.Rewrite
     "ssl" -> AppIcon.Certificate
     "directory" -> AppIcon.Files
+    "access_log" -> AppIcon.Logs
+    "error_log" -> AppIcon.Logs
     "delete" -> AppIcon.Delete
     else -> AppIcon.Generic
 }

@@ -158,6 +158,7 @@ class LoginViewModel : ViewModel() {
                     passCode = passCode.value.trim(),
                     captchaCode = captchaCode.value.trim()
                 )?.onSuccess {
+                    saveSessionCredentials(uname, pwd)
                     _loginStatus.value = LoginStatus.Success
                     onSuccess()
                 }?.onFailure { e ->
@@ -175,6 +176,21 @@ class LoginViewModel : ViewModel() {
                 FeedbackCenter.error("登录失败", message)
             }
         }
+    }
+
+    private fun saveSessionCredentials(username: String, password: String) {
+        val cfg = _config.value ?: return
+        if (cfg.authMode != "session") return
+        PanelRepository.updatePanel(
+            cfg.copy(
+                sessionUsername = username,
+                sessionPassword = password
+            )
+        )
+        _config.value = cfg.copy(
+            sessionUsername = username,
+            sessionPassword = password
+        )
     }
 
     sealed class LoginStatus {

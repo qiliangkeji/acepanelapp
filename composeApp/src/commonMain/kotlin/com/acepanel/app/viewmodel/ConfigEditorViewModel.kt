@@ -32,14 +32,16 @@ class ConfigEditorViewModel : ViewModel() {
 
     private var service: PanelApiService? = null
     private var currentPath: String = ""
+    private var currentService: String = ""
 
-    fun init(panelId: String, filePath: String) {
+    fun init(panelId: String, filePath: String, serviceName: String = "") {
         val cfg = PanelRepository.getPanel(panelId) ?: return
         _config.value = cfg
         currentPath = filePath
+        currentService = serviceName
         service?.close()
         service = PanelApiService(cfg)
-        if (filePath.isNotEmpty()) {
+        if (filePath.isNotEmpty() || serviceName.isNotEmpty()) {
             viewModelScope.launch { loadContent() }
         }
     }
@@ -48,19 +50,26 @@ class ConfigEditorViewModel : ViewModel() {
     private suspend fun loadContent() {
         _isLoading.value = true
         _error.value = null
-        service?.getFileContent(currentPath)
-            ?.onSuccess { resp ->
-                content.value = try {
-                    Base64.decode(resp.content).decodeToString()
-                } catch (_: Exception) {
-                    resp.content
+        if (currentService.isNotBlank()) {
+            service?.tailFile(service = currentService, limit = 800)
+                ?.onSuccess { resp -> content.value = resp.lines.joinToString("\n") }
+                ?.onFailure { _error.value = it.message }
+        } else {
+            service?.getFileContent(currentPath)
+                ?.onSuccess { resp ->
+                    content.value = try {
+                        Base64.decode(resp.content).decodeToString()
+                    } catch (_: Exception) {
+                        resp.content
+                    }
                 }
-            }
-            ?.onFailure { _error.value = it.message }
+                ?.onFailure { _error.value = it.message }
+        }
         _isLoading.value = false
     }
 
     fun save(onSuccess: () -> Unit) {
+        if (currentService.isNotBlank()) return
         viewModelScope.launch {
             _isSaving.value = true
             _saveResult.value = null

@@ -232,6 +232,8 @@ fun WebsiteDetailScreen(
                                 "rewrite" to "伪静态",
                                 "ssl" to "SSL 证书",
                                 "directory" to "网站目录",
+                                "access_log" to "访问日志",
+                                "error_log" to "错误日志",
                                 "delete" to "删除网站"
                             )
                             items.forEachIndexed { idx, (key, label) ->

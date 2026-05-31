@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -31,7 +32,13 @@ import com.acepanel.app.viewmodel.TerminalViewModel
 fun TerminalScreen(
     panelId: String = "",
     sshId: Long = 0,
-    onBackClick: () -> Unit = {}
+    initialPath: String = "/",
+    showStatusBarSpacer: Boolean = true,
+    showBackButton: Boolean = true,
+    headerDragModifier: Modifier = Modifier,
+    onBackClick: () -> Unit = {},
+    onFloat: (() -> Unit)? = null,
+    onMinimize: (() -> Unit)? = null
 ) {
     val vm: TerminalViewModel = viewModel()
     val lines by vm.lines.collectAsStateWithLifecycle()
@@ -41,8 +48,8 @@ fun TerminalScreen(
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(panelId, sshId) {
-        if (panelId.isNotEmpty()) vm.init(panelId, sshId)
+    LaunchedEffect(panelId, sshId, initialPath) {
+        if (panelId.isNotEmpty()) vm.init(panelId, sshId, initialPath)
     }
 
     // 有新行时自动滚动到底部
@@ -51,35 +58,44 @@ fun TerminalScreen(
     }
 
     val title = if (sshId > 0) "SSH 终端 #$sshId" else "终端"
+    val pathText = initialPath.trim().ifBlank { "/" }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF1A1A2E))
     ) {
-        StatusBarSpacer()
+        if (showStatusBarSpacer) StatusBarSpacer()
 
         // Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color(0xFF16213E))
+                .then(headerDragModifier)
                 .padding(horizontal = 20.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .border(1.dp, Color(0xFF3F4E6E), RoundedCornerShape(8.dp))
-                    .clickable(onClick = onBackClick),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("‹", fontSize = 20.sp, color = Color(0xFFCDD6F4))
+            if (showBackButton) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .border(1.dp, Color(0xFF3F4E6E), RoundedCornerShape(8.dp))
+                        .clickable(onClick = onBackClick),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("‹", fontSize = 20.sp, color = Color(0xFFCDD6F4))
+                }
+            } else {
+                Spacer(modifier = Modifier.size(34.dp))
             }
 
             Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -106,14 +122,40 @@ fun TerminalScreen(
                     )
                 }
                 Text(
-                    text = "$title · $dotLabel",
+                    text = if (sshId > 0) "$title · $dotLabel" else "$title · $dotLabel · $pathText",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFCDD6F4)
+                    color = Color(0xFFCDD6F4),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onFloat != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, Color(0xFF3F4E6E), RoundedCornerShape(8.dp))
+                            .clickable(onClick = onFloat),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("悬", fontSize = 13.sp, color = Color(0xFFA1A1AA))
+                    }
+                }
+                if (onMinimize != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, Color(0xFF3F4E6E), RoundedCornerShape(8.dp))
+                            .clickable(onClick = onMinimize),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("−", fontSize = 18.sp, color = Color(0xFFA1A1AA))
+                    }
+                }
                 // 清屏按钮
                 Box(
                     modifier = Modifier

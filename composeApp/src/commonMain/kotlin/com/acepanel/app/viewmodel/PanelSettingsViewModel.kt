@@ -95,6 +95,12 @@ class PanelSettingsViewModel : ViewModel() {
     fun updateAutoUpdate(enabled: Boolean) = saveWith { copy(auto_update = enabled) }
     fun updateLoginCaptcha(enabled: Boolean) = saveWith { copy(login_captcha = enabled) }
     fun updateChannel(channel: String) = saveWith { copy(channel = channel) }
+    fun updateWebsitePath(path: String) = saveWith { copy(website_path = path) }
+    fun updateBackupPath(path: String) = saveWith { copy(backup_path = path) }
+    fun updateProjectPath(path: String) = saveWith { copy(project_path = path) }
+    fun updateIpdbPath(path: String) = saveWith { copy(ipdb_path = path) }
+    fun updateTlsCert(path: String) = saveWith { copy(cert = path) }
+    fun updateTlsKey(path: String) = saveWith { copy(key = path) }
     fun dismissRestart() { _restartRequired.value = false }
 
     private fun PanelSettingData.normalizedForSave(): PanelSettingData {

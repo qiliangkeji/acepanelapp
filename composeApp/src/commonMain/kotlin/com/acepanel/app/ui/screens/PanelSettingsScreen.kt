@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.acepanel.app.ui.components.AnimatedAppDialog
+import com.acepanel.app.ui.components.RemotePathMode
+import com.acepanel.app.ui.components.RemotePathSelector
 import com.acepanel.app.ui.components.SegmentedTabs
 import com.acepanel.app.ui.components.StatusBarSpacer
 import com.acepanel.app.ui.components.rememberTabBackStack
@@ -47,6 +49,12 @@ fun PanelSettingsScreen(
     var showPortDialog by remember { mutableStateOf(false) }
     var showLifetimeDialog by remember { mutableStateOf(false) }
     var showEntranceDialog by remember { mutableStateOf(false) }
+    var showWebsitePathDialog by remember { mutableStateOf(false) }
+    var showBackupPathDialog by remember { mutableStateOf(false) }
+    var showProjectPathDialog by remember { mutableStateOf(false) }
+    var showIpdbPathDialog by remember { mutableStateOf(false) }
+    var showTlsCertDialog by remember { mutableStateOf(false) }
+    var showTlsKeyDialog by remember { mutableStateOf(false) }
     var showMemoDialog by remember { mutableStateOf(false) }
     var showChannelDialog by remember { mutableStateOf(false) }
     val sectionStack = rememberTabBackStack()
@@ -86,6 +94,72 @@ fun PanelSettingsScreen(
                 if (mode != setting?.entrance_error) vm.updateEntranceError(mode)
                 showEntranceDialog = false
             }
+        )
+    }
+    if (showWebsitePathDialog) {
+        RemotePathDialog(
+            panelId = panelId,
+            title = "网站默认目录",
+            label = "网站默认目录",
+            initialValue = setting?.website_path ?: "",
+            mode = RemotePathMode.Directory,
+            onDismiss = { showWebsitePathDialog = false },
+            onConfirm = { vm.updateWebsitePath(it); showWebsitePathDialog = false }
+        )
+    }
+    if (showBackupPathDialog) {
+        RemotePathDialog(
+            panelId = panelId,
+            title = "备份默认目录",
+            label = "备份默认目录",
+            initialValue = setting?.backup_path ?: "",
+            mode = RemotePathMode.Directory,
+            onDismiss = { showBackupPathDialog = false },
+            onConfirm = { vm.updateBackupPath(it); showBackupPathDialog = false }
+        )
+    }
+    if (showProjectPathDialog) {
+        RemotePathDialog(
+            panelId = panelId,
+            title = "项目默认目录",
+            label = "项目默认目录",
+            initialValue = setting?.project_path ?: "",
+            mode = RemotePathMode.Directory,
+            onDismiss = { showProjectPathDialog = false },
+            onConfirm = { vm.updateProjectPath(it); showProjectPathDialog = false }
+        )
+    }
+    if (showIpdbPathDialog) {
+        RemotePathDialog(
+            panelId = panelId,
+            title = "IPDB 文件",
+            label = "IPDB 文件",
+            initialValue = setting?.ipdb_path ?: "",
+            mode = RemotePathMode.File,
+            onDismiss = { showIpdbPathDialog = false },
+            onConfirm = { vm.updateIpdbPath(it); showIpdbPathDialog = false }
+        )
+    }
+    if (showTlsCertDialog) {
+        RemotePathDialog(
+            panelId = panelId,
+            title = "TLS 证书文件",
+            label = "TLS 证书文件",
+            initialValue = setting?.cert ?: "",
+            mode = RemotePathMode.File,
+            onDismiss = { showTlsCertDialog = false },
+            onConfirm = { vm.updateTlsCert(it); showTlsCertDialog = false }
+        )
+    }
+    if (showTlsKeyDialog) {
+        RemotePathDialog(
+            panelId = panelId,
+            title = "TLS 私钥文件",
+            label = "TLS 私钥文件",
+            initialValue = setting?.key ?: "",
+            mode = RemotePathMode.File,
+            onDismiss = { showTlsKeyDialog = false },
+            onConfirm = { vm.updateTlsKey(it); showTlsKeyDialog = false }
         )
     }
     if (showMemoDialog) {
@@ -279,6 +353,38 @@ fun PanelSettingsScreen(
                 }
             }
 
+            item {
+                SectionHeader("默认路径")
+                Box(
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                        .border(1.5.dp, Color(0xFFE4E4E7), RoundedCornerShape(16.dp))
+                ) {
+                    Column {
+                        EditableSettingRow("网站目录", setting?.website_path?.ifEmpty { "—" } ?: "—") { showWebsitePathDialog = true }
+                        HorizontalDivider(thickness = 1.dp, color = Color(0xFFE4E4E7))
+                        EditableSettingRow("备份目录", setting?.backup_path?.ifEmpty { "—" } ?: "—") { showBackupPathDialog = true }
+                        HorizontalDivider(thickness = 1.dp, color = Color(0xFFE4E4E7))
+                        EditableSettingRow("项目目录", setting?.project_path?.ifEmpty { "—" } ?: "—") { showProjectPathDialog = true }
+                    }
+                }
+            }
+
+            item {
+                SectionHeader("文件配置")
+                Box(
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                        .border(1.5.dp, Color(0xFFE4E4E7), RoundedCornerShape(16.dp))
+                ) {
+                    Column {
+                        EditableSettingRow("IPDB 文件", setting?.ipdb_path?.ifEmpty { "—" } ?: "—") { showIpdbPathDialog = true }
+                        HorizontalDivider(thickness = 1.dp, color = Color(0xFFE4E4E7))
+                        EditableSettingRow("TLS 证书", setting?.cert?.ifEmpty { "—" } ?: "—") { showTlsCertDialog = true }
+                        HorizontalDivider(thickness = 1.dp, color = Color(0xFFE4E4E7))
+                        EditableSettingRow("TLS 私钥", setting?.key?.ifEmpty { "—" } ?: "—") { showTlsKeyDialog = true }
+                    }
+                }
+            }
+
             // 其他
             item {
                 SectionHeader("其他")
@@ -383,6 +489,45 @@ private fun SingleFieldDialog(
                 Box(
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF2563EB))
                         .clickable(enabled = value.isNotBlank()) { onConfirm(value.trim()) }
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) { Text("保存", fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.Medium) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemotePathDialog(
+    panelId: String,
+    title: String,
+    label: String,
+    initialValue: String,
+    mode: RemotePathMode,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var value by remember(initialValue) { mutableStateOf(initialValue) }
+
+    AnimatedAppDialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                .background(Color.White).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF18181B))
+            RemotePathSelector(
+                panelId = panelId,
+                value = value,
+                onValueChange = { value = it },
+                label = label,
+                mode = mode
+            )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text("取消", color = Color(0xFF71717A)) }
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF2563EB))
+                        .clickable { onConfirm(value.trim()) }
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) { Text("保存", fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.Medium) }
             }

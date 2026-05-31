@@ -67,6 +67,10 @@ class PanelApiService(config: PanelConfig) {
         } catch (_: Exception) { "" }
     }
 
+    private fun formatErrorBody(text: String): String {
+        return extractMsgFromText(text).ifBlank { text }
+    }
+
     private fun isEntranceDenied(message: String?): Boolean {
         val text = message.orEmpty()
         return text.contains("HTTP 418") || text.contains("访问被拒绝")
@@ -740,7 +744,7 @@ class PanelApiService(config: PanelConfig) {
         return try {
             val resp = client.put("/api/project/$id", json.encodeToString(req.copy(id = id)))
             if (resp.status.isSuccess()) Result.success(Unit)
-            else Result.failure(Exception(resp.bodyAsText()))
+            else Result.failure(Exception(formatErrorBody(resp.bodyAsText())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -887,6 +891,21 @@ class PanelApiService(config: PanelConfig) {
         }
     }
 
+    /** 读取文件尾部或 systemd 服务日志 */
+    suspend fun tailFile(path: String = "", service: String = "", offset: Int = 0, limit: Int = 500): Result<FileTailResponse> {
+        return try {
+            val params = mutableMapOf(
+                "offset" to offset.toString(),
+                "limit" to limit.toString()
+            )
+            if (path.isNotBlank()) params["path"] = path
+            if (service.isNotBlank()) params["service"] = service
+            client.get("/api/file/tail", params).parseData()
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     /** 保存文件内容（content 为原始文本） */
     suspend fun saveFile(path: String, content: String): Result<Unit> {
         return try {
@@ -999,6 +1018,72 @@ class PanelApiService(config: PanelConfig) {
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /** 上传本地文件到远程完整路径 */
+    suspend fun uploadFile(path: String, fileName: String, bytes: ByteArray, force: Boolean = false): Result<Unit> {
+        return try {
+            val (body, boundary) = buildUploadMultipartBody(path, fileName, bytes, force)
+            val resp = client.postBytes(
+                "/api/file/upload",
+                body,
+                ContentType.MultiPart.FormData.withParameter("boundary", boundary)
+            )
+            if (resp.status.isSuccess()) Result.success(Unit)
+            else Result.failure(Exception(resp.bodyAsText()))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /** 下载远程文件，返回文件字节 */
+    suspend fun downloadFile(path: String): Result<ByteArray> {
+        return try {
+            val resp = client.get("/api/file/download", mapOf("path" to path))
+            if (resp.status.isSuccess()) Result.success(resp.bodyAsBytes())
+            else Result.failure(Exception(resp.bodyAsText()))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun buildUploadMultipartBody(
+        path: String,
+        fileName: String,
+        bytes: ByteArray,
+        force: Boolean
+    ): Pair<ByteArray, String> {
+        val boundary = "AcePanelBoundary${currentTimeSeconds()}${bytes.size}"
+        val parts = mutableListOf<ByteArray>()
+
+        fun appendText(text: String) {
+            parts += text.encodeToByteArray()
+        }
+
+        fun appendField(name: String, value: String) {
+            appendText("--$boundary\r\n")
+            appendText("Content-Disposition: form-data; name=\"$name\"\r\n\r\n")
+            appendText("$value\r\n")
+        }
+
+        appendField("path", path)
+        appendField("force", force.toString())
+
+        val safeFileName = fileName.replace("\"", "%22")
+        appendText("--$boundary\r\n")
+        appendText("Content-Disposition: form-data; name=\"file\"; filename=\"$safeFileName\"\r\n")
+        appendText("Content-Type: application/octet-stream\r\n\r\n")
+        parts += bytes
+        appendText("\r\n--$boundary--\r\n")
+
+        val totalSize = parts.sumOf { it.size }
+        val result = ByteArray(totalSize)
+        var offset = 0
+        parts.forEach { part ->
+            part.copyInto(result, offset)
+            offset += part.size
+        }
+        return result to boundary
     }
 
     // =================== 备份管理 ===================
@@ -1363,7 +1448,7 @@ class PanelApiService(config: PanelConfig) {
         return try {
             val resp = client.post("/api/project", json.encodeToString(req))
             if (resp.status.isSuccess()) Result.success(Unit)
-            else { val err = resp.bodyAsText(); Result.failure(Exception("创建失败: $err")) }
+            else { val err = formatErrorBody(resp.bodyAsText()); Result.failure(Exception("创建失败: $err")) }
         } catch (e: Exception) { Result.failure(e) }
     }
 
@@ -1970,11 +2055,13 @@ class PanelApiService(config: PanelConfig) {
      */
     suspend fun startPtySession(
         inputChannel: ReceiveChannel<String>,
+        initialPath: String = "/",
         onOutput: (String) -> Unit
     ): Result<Unit> {
         return try {
             client.connectWs("/api/ws/pty") {
-                send(Frame.Text("bash\n"))
+                val shellPath = initialPath.trim().ifBlank { "/" }.replace("'", "'\"'\"'")
+                send(Frame.Text("cd '$shellPath' && exec bash -l\n"))
                 val senderJob = launch {
                     for (cmd in inputChannel) {
                         send(Frame.Text(cmd))

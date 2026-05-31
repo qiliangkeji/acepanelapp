@@ -186,8 +186,39 @@ class FileManagerViewModel : ViewModel() {
         }
     }
 
+    fun uploadLocalFile(name: String, bytes: ByteArray, force: Boolean = false) {
+        val target = joinPath(_currentPath.value, name.trim())
+        viewModelScope.launch {
+            _actionError.value = null
+            service?.uploadFile(target, name.trim(), bytes, force)
+                ?.onSuccess { load() }
+                ?.onFailure { _actionError.value = "上传失败: ${it.message}" }
+        }
+    }
+
+    fun downloadFile(file: FileListItem, onResult: (ByteArray?, String?) -> Unit) {
+        if (file.dir) {
+            onResult(null, "目录请先压缩后下载")
+            return
+        }
+        viewModelScope.launch {
+            _actionError.value = null
+            val result = service?.downloadFile(file.full)
+            result
+                ?.onSuccess { onResult(it, null) }
+                ?.onFailure {
+                    _actionError.value = "下载失败: ${it.message}"
+                    onResult(null, it.message)
+                }
+        }
+    }
+
     fun showCreate() { _showCreateDialog.value = true }
     fun hideCreate() { _showCreateDialog.value = false }
+
+    fun setActionError(message: String?) {
+        _actionError.value = message
+    }
 
     private fun joinPath(dir: String, name: String): String {
         val normalizedDir = normalizePath(dir)

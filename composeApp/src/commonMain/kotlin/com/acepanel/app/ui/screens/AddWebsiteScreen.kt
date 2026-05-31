@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.acepanel.app.ui.components.RemotePathMode
+import com.acepanel.app.ui.components.RemotePathSelector
 import com.acepanel.app.ui.components.StatusBarSpacer
 import com.acepanel.app.viewmodel.AddWebsiteViewModel
 
@@ -161,16 +163,14 @@ fun AddWebsiteScreen(
 
             // 运行目录（可选）
             item {
-                WebsiteFormSection("运行目录（留空使用默认路径）") {
-                    OutlinedTextField(
-                        value = path,
-                        onValueChange = { vm.path.value = it },
-                        placeholder = { Text("/www/wwwroot/my-website/public") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
+                RemotePathSelector(
+                    panelId = panelId,
+                    value = path,
+                    onValueChange = { vm.path.value = it },
+                    label = "运行目录（留空使用默认路径）",
+                    placeholder = "/www/wwwroot/my-website/public",
+                    mode = RemotePathMode.Directory
+                )
             }
 
             // PHP 版本（type=php）

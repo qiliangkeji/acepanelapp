@@ -5,6 +5,11 @@ import io.ktor.client.plugins.websocket.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import com.acepanel.app.data.ApiResponse
+import com.acepanel.app.data.CaptchaResponse
+import com.acepanel.app.data.LoginRequest
 import com.acepanel.app.data.PanelConfig
 import com.acepanel.app.data.PanelRepository
 import com.acepanel.app.feedback.FeedbackCenter
@@ -19,6 +24,14 @@ class ApiClient(val config: PanelConfig) {
     var storedSessionCookie: String? = SessionCookieStore.get(config.id) ?: PanelRepository.getSessionCookie(config.id)
 
     private val httpClient: HttpClient = sharedHttpClient
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        coerceInputValues = true
+        explicitNulls = false
+        encodeDefaults = true
+    }
 
     /**
      * 构建请求 URL（Token 模式带入口前缀）
@@ -187,11 +200,16 @@ class ApiClient(val config: PanelConfig) {
         if (newCookies.isNotEmpty()) {
             storedSessionCookie = mergeSetCookies(storedSessionCookie, newCookies)
             storedSessionCookie?.takeIf { it.isNotBlank() }?.let {
-                SessionCookieStore.set(config.id, it)
+                persistSessionCookie(it)
             }
             return !storedSessionCookie.isNullOrBlank()
         }
         return false
+    }
+
+    private fun persistSessionCookie(cookie: String) {
+        SessionCookieStore.set(config.id, cookie)
+        PanelRepository.saveSessionCookie(config.id, cookie)
     }
 
     private data class FeedbackLabels(
@@ -294,7 +312,9 @@ class ApiClient(val config: PanelConfig) {
         queryForSign: String,
         bodyJson: String?,
         queryParams: Map<String, String>,
-        sessionCookie: String?
+        sessionCookie: String?,
+        bodyBytesOverride: ByteArray? = null,
+        bodyContentType: ContentType = ContentType.Application.Json
     ): HttpResponse {
         val labels = feedbackLabels(method, pathForSign)
         val operationId = labels?.let { FeedbackCenter.begin(it.working, it.detail) }
@@ -306,7 +326,9 @@ class ApiClient(val config: PanelConfig) {
                 queryForSign = queryForSign,
                 bodyJson = bodyJson,
                 queryParams = queryParams,
-                sessionCookie = sessionCookie
+                sessionCookie = sessionCookie,
+                bodyBytesOverride = bodyBytesOverride,
+                bodyContentType = bodyContentType
             )
             if (labels != null) {
                 if (resp.status.isSuccess()) {
@@ -331,9 +353,13 @@ class ApiClient(val config: PanelConfig) {
         queryForSign: String,
         bodyJson: String?,
         queryParams: Map<String, String>,
-        sessionCookie: String?
+        sessionCookie: String?,
+        bodyBytesOverride: ByteArray? = null,
+        bodyContentType: ContentType = ContentType.Application.Json,
+        retryEntranceDenied: Boolean = true,
+        retrySessionExpired: Boolean = true
     ): HttpResponse {
-        val bodyBytes = (bodyJson ?: "").encodeToByteArray()
+        val bodyBytes = bodyBytesOverride ?: (bodyJson ?: "").encodeToByteArray()
         var currentUrl = buildUrl(pathForSign)
         var redirectCount = 0
 
@@ -349,10 +375,14 @@ class ApiClient(val config: PanelConfig) {
 
                 if (bodyJson != null) {
                     if (bodyJson.isNotEmpty() || method == HttpMethod.Post || method == HttpMethod.Put) {
-                        contentType(ContentType.Application.Json)
+                        contentType(bodyContentType)
                     }
                     if (bodyJson.isNotEmpty() || method == HttpMethod.Post || method == HttpMethod.Put) {
-                        setBody(bodyJson)
+                        if (bodyBytesOverride != null) {
+                            setBody(bodyBytesOverride)
+                        } else {
+                            setBody(bodyJson)
+                        }
                     }
                 }
 
@@ -371,11 +401,129 @@ class ApiClient(val config: PanelConfig) {
 
             val location = resp.headers[HttpHeaders.Location]
             if (!resp.status.isRedirectStatus() || location.isNullOrBlank() || redirectCount >= MAX_REDIRECT_FOLLOWS) {
+                if (
+                    resp.status.value == 418 &&
+                    config.authMode == "session" &&
+                    retryEntranceDenied &&
+                    initEntrance().isSuccess
+                ) {
+                    return requestWithRedirect(
+                        method = method,
+                        pathForSign = pathForSign,
+                        queryForSign = queryForSign,
+                        bodyJson = bodyJson,
+                        queryParams = queryParams,
+                        sessionCookie = sessionCookie,
+                        bodyBytesOverride = bodyBytesOverride,
+                        bodyContentType = bodyContentType,
+                        retryEntranceDenied = false,
+                        retrySessionExpired = retrySessionExpired
+                    )
+                }
+                if (
+                    resp.status == HttpStatusCode.Unauthorized &&
+                    config.authMode == "session" &&
+                    retrySessionExpired &&
+                    sessionCookie == null &&
+                    pathForSign != "/api/user/login" &&
+                    autoRelogin().isSuccess
+                ) {
+                    return requestWithRedirect(
+                        method = method,
+                        pathForSign = pathForSign,
+                        queryForSign = queryForSign,
+                        bodyJson = bodyJson,
+                        queryParams = queryParams,
+                        sessionCookie = null,
+                        bodyBytesOverride = bodyBytesOverride,
+                        bodyContentType = bodyContentType,
+                        retryEntranceDenied = retryEntranceDenied,
+                        retrySessionExpired = false
+                    )
+                }
                 return resp
             }
 
             currentUrl = resolveRedirectUrl(currentUrl, location)
             redirectCount++
+        }
+    }
+
+    private suspend fun autoRelogin(): Result<Unit> {
+        if (config.authMode != "session") return Result.success(Unit)
+        val username = config.sessionUsername.trim()
+        val password = config.sessionPassword
+        if (username.isEmpty() || password.isEmpty()) {
+            return Result.failure(Exception("未保存账号密码，无法自动重新登录"))
+        }
+
+        return try {
+            initEntrance().getOrThrow()
+
+            val captchaResp = httpClient.get(buildUrl("/api/user/captcha")) {
+                header(HttpHeaders.UserAgent, requestUserAgent())
+                storedSessionCookie?.takeIf { it.isNotBlank() }?.let { header(HttpHeaders.Cookie, it) }
+            }
+            mergeSessionCookiesFrom(captchaResp)
+            if (captchaResp.status.isSuccess()) {
+                val captchaText = captchaResp.bodyAsText()
+                val captcha = runCatching {
+                    json.decodeFromString<ApiResponse<CaptchaResponse>>(captchaText).data
+                }.getOrNull()
+                if (captcha?.required == true) {
+                    return Result.failure(Exception("面板启用了图形验证码，无法自动重新登录"))
+                }
+            }
+
+            val twoFaResp = httpClient.get(buildUrl("/api/user/is_2fa")) {
+                header(HttpHeaders.UserAgent, requestUserAgent())
+                parameter("username", username)
+                storedSessionCookie?.takeIf { it.isNotBlank() }?.let { header(HttpHeaders.Cookie, it) }
+            }
+            mergeSessionCookiesFrom(twoFaResp)
+            if (twoFaResp.status.isSuccess()) {
+                val twoFaText = twoFaResp.bodyAsText()
+                val twoFaEnabled = runCatching {
+                    json.decodeFromString<ApiResponse<Boolean>>(twoFaText).data == true
+                }.getOrDefault(false)
+                if (twoFaEnabled) {
+                    return Result.failure(Exception("面板启用了 2FA，无法自动重新登录"))
+                }
+            }
+
+            val keyResp = httpClient.get(buildUrl("/api/user/key")) {
+                header(HttpHeaders.UserAgent, requestUserAgent())
+                storedSessionCookie?.takeIf { it.isNotBlank() }?.let { header(HttpHeaders.Cookie, it) }
+            }
+            mergeSessionCookiesFrom(keyResp)
+            if (!keyResp.status.isSuccess()) {
+                return Result.failure(Exception("获取登录公钥失败：HTTP ${keyResp.status.value}"))
+            }
+            val publicKey = json.decodeFromString<ApiResponse<String>>(keyResp.bodyAsText()).data
+                ?: return Result.failure(Exception("服务器未返回登录公钥"))
+
+            val req = LoginRequest(
+                username = rsaEncryptOaepSha512(publicKey, username.encodeToByteArray()),
+                password = rsaEncryptOaepSha512(publicKey, password.encodeToByteArray())
+            )
+            val body = json.encodeToString(req)
+            val loginResp = requestWithRedirect(
+                method = HttpMethod.Post,
+                pathForSign = "/api/user/login",
+                queryForSign = "",
+                bodyJson = body,
+                queryParams = emptyMap(),
+                sessionCookie = null,
+                retryEntranceDenied = true,
+                retrySessionExpired = false
+            )
+            if (loginResp.status.isSuccess()) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("自动重新登录失败：HTTP ${loginResp.status.value}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
@@ -407,6 +555,24 @@ class ApiClient(val config: PanelConfig) {
             bodyJson = bodyJson,
             queryParams = emptyMap(),
             sessionCookie = sessionCookie
+        )
+    }
+
+    suspend fun postBytes(
+        path: String,
+        bytes: ByteArray,
+        contentType: ContentType,
+        sessionCookie: String? = null
+    ): HttpResponse {
+        return requestWithFeedback(
+            method = HttpMethod.Post,
+            pathForSign = path,
+            queryForSign = "",
+            bodyJson = "",
+            queryParams = emptyMap(),
+            sessionCookie = sessionCookie,
+            bodyBytesOverride = bytes,
+            bodyContentType = contentType
         )
     }
 
@@ -493,6 +659,9 @@ class ApiClient(val config: PanelConfig) {
         queryParams: Map<String, String> = emptyMap(),
         block: suspend DefaultClientWebSocketSession.() -> Unit
     ) {
+        if (config.authMode == "session") {
+            initEntrance().getOrElse { throw it }
+        }
         val wsScheme = if (config.scheme == "https") "wss" else "ws"
         val query = if (queryParams.isEmpty()) "" else "?" + queryParams.entries
             .sortedBy { it.key }
@@ -502,6 +671,7 @@ class ApiClient(val config: PanelConfig) {
         httpClient.webSocket(
             urlString = url,
             request = {
+                header(HttpHeaders.UserAgent, requestUserAgent())
                 if (cookie != null) header(HttpHeaders.Cookie, cookie)
             },
             block = block

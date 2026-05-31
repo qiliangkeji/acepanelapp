@@ -130,16 +130,24 @@ class ProjectListViewModel : ViewModel() {
 
     fun createProject(name: String, type: String, description: String,
                       rootDir: String, execStart: String, user: String) {
+        val nameError = validateProjectName(name)
+        if (nameError != null) {
+            _actionError.value = nameError
+            return
+        }
         viewModelScope.launch {
             _isCreating.value = true
             _actionError.value = null
+            val logDir = rootDir.trim().trimEnd('/').takeIf { it.isNotBlank() }?.let { "$it/log" }.orEmpty()
             service?.createProject(CreateProjectRequest(
                 name = name, type = type, description = description,
-                root_dir = rootDir, exec_start = execStart, user = user
+                root_dir = rootDir, exec_start = execStart, user = user,
+                standard_output = logDir.takeIf { it.isNotBlank() }?.let { "file:$it/stdout.log" }.orEmpty(),
+                standard_error = logDir.takeIf { it.isNotBlank() }?.let { "file:$it/stderr.log" }.orEmpty()
             ))?.onSuccess {
                 _showCreateDialog.value = false
                 load()
-            }?.onFailure { _actionError.value = it.message }
+            }?.onFailure { _actionError.value = friendlyProjectError(it.message) }
             _isCreating.value = false
         }
     }
@@ -162,6 +170,11 @@ class ProjectListViewModel : ViewModel() {
     }
 
     fun updateProject(req: UpdateProjectRequest) {
+        val nameError = validateProjectName(req.name)
+        if (nameError != null) {
+            _actionError.value = nameError
+            return
+        }
         viewModelScope.launch {
             _isUpdating.value = true
             _actionError.value = null
@@ -170,7 +183,7 @@ class ProjectListViewModel : ViewModel() {
                     _editingProject.value = null
                     load()
                 }
-                ?.onFailure { _actionError.value = "保存失败: ${it.message}" }
+                ?.onFailure { _actionError.value = "保存失败: ${friendlyProjectError(it.message)}" }
             _isUpdating.value = false
         }
     }
@@ -219,6 +232,27 @@ class ProjectListViewModel : ViewModel() {
             msg.contains("not found") ||
             msg.contains("not loaded") ||
             msg.contains("no such file")
+    }
+
+    private fun validateProjectName(name: String): String? {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return "请输入项目名称"
+        val valid = trimmed.all { ch ->
+            ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '_' || ch == '-'
+        }
+        return if (valid) null else "项目名称只能使用英文字母、数字、下划线和中划线，例如 bbs 或 server-linux"
+    }
+
+    private fun friendlyProjectError(message: String?): String {
+        val text = message.orEmpty()
+        val lower = text.lowercase()
+        return when {
+            text.contains("name 没有通过正则匹配") || text.contains("regex") ->
+                "项目名称只能使用英文字母、数字、下划线和中划线，例如 bbs 或 server-linux"
+            lower.contains("not a directory") ->
+                "创建项目目录失败：所选路径不是可创建目录，请选择目录，不要选择文件"
+            else -> text.ifBlank { "操作失败" }
+        }
     }
 
     override fun onCleared() {

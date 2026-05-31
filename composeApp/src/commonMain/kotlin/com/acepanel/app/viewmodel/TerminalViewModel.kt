@@ -29,6 +29,7 @@ class TerminalViewModel : ViewModel() {
     private var terminalJob: Job? = null
     private val inputChannel = Channel<String>(Channel.BUFFERED)
     private var sshId: Long = 0
+    private var initialPath: String = "/"
 
     private val ansiRegex = Regex("\u001B\\[[0-9;?]*[A-Za-z]|\u001B[^\\[]")
 
@@ -36,19 +37,22 @@ class TerminalViewModel : ViewModel() {
         private const val MAX_LINES = 1000
     }
 
-    fun init(panelId: String, sshId: Long = 0) {
+    fun init(panelId: String, sshId: Long = 0, initialPath: String = "/") {
         this.sshId = sshId
+        this.initialPath = normalizePath(initialPath)
         val cfg = PanelRepository.getPanel(panelId) ?: run {
             _connState.value = ConnState.ERROR
             _errorMessage.value = "未找到面板配置"
             return
         }
         // WebSocket 只支持 Session Cookie 鉴权
-        if (SessionCookieStore.get(panelId) == null) {
+        val savedCookie = SessionCookieStore.get(panelId) ?: PanelRepository.getSessionCookie(panelId)
+        if (savedCookie == null) {
             _connState.value = ConnState.ERROR
             _errorMessage.value = "WebSocket 终端需要 Session 登录\n请先通过「登录」入口进行身份认证"
             return
         }
+        SessionCookieStore.set(panelId, savedCookie)
         service?.close()
         service = PanelApiService(cfg)
         connect()
@@ -64,7 +68,7 @@ class TerminalViewModel : ViewModel() {
             val result = if (sshId > 0) {
                 svc.startSshSession(sshId, inputChannel) { appendOutput(it) }
             } else {
-                svc.startPtySession(inputChannel) { appendOutput(it) }
+                svc.startPtySession(inputChannel, initialPath) { appendOutput(it) }
             }
             result.onSuccess {
                 _connState.value = ConnState.DISCONNECTED
@@ -105,6 +109,11 @@ class TerminalViewModel : ViewModel() {
 
     fun clear() {
         _lines.value = emptyList()
+    }
+
+    private fun normalizePath(path: String): String {
+        val trimmed = path.trim().ifBlank { "/" }
+        return if (trimmed.startsWith("/")) trimmed else "/$trimmed"
     }
 
     override fun onCleared() {
